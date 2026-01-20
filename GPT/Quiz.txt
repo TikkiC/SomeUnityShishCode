@@ -1,0 +1,243 @@
+User: Мне нужно разработать 2д мини игру на юнити
+Игра для андроида
+Твоя задача сделать только код для игры и сказать что куда привязать
+Пиши МАКСИМАЛЬНО простой и короткий код чтобы я мог запомнить и повторить код по памяти завтра на чемпионате за полчаса
+
+Изображение находится в canvas, его нужно открывать через image type - Fill, Fillmethod - Round
+
+Мини игра викторина
+Есть слово которое нужно угадать по картинке
+Есть набор кнопок с буквами (Подходящие и случайные), после нажатия кнопки она больше не нажимается
+Есть текст в который заносятся нажатые буквы
+Есть кнопка проверки ответа и кнопка стереть последнюю букву (Отключенная кнопка должна вновь нажиматься)
+При неправильном ответе картинка раскрывается больше
+Без ошибок - 25%, 1 ошибка - 50%, 2 ошибки - 75%
+При третьей ошибке изображение полностью раскрываеться
+При правильном ответе изображение полностью раскрывается выводя тот же текст
+
+Через 4 секунды после победы сцена меняется на главное меню
+
+GitHub Copilot: **План (очень коротко):** дам 2–3 скрипта + чеклист, что куда перетащить в инспекторе, чтобы викторина работала с `Image.fillAmount` (Filled/Radial360), кнопками букв, проверкой, backspace и автопереходом в меню через 4 секунды.
+
+---
+
+## 1) Скрипт игры: QuizGame.cs
+
+```csharp
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.SceneManagement;
+using TMPro;
+
+public class QuizGame : MonoBehaviour
+{
+    [Header("Answer")]
+    public string answer = "КОТ";          // слово (лучше капсом)
+    public int totalButtons = 12;          // всего кнопок-букв
+
+    [Header("UI")]
+    public Image picture;                 // Image (Type = Filled, Radial360)
+    public TMP_Text typedText;            // куда печатаются буквы
+    public TMP_Text resultText;           // можно пустым/необязательно
+    public Transform buttonsParent;       // контейнер (GridLayoutGroup)
+    public LetterButton buttonPrefab;     // префаб кнопки буквы
+    public Button checkButton;
+    public Button backspaceButton;
+
+    int errors = 0;
+    string typed = "";
+    bool won = false;
+    Stack<LetterButton> pressed = new Stack<LetterButton>();
+
+    void Start()
+    {
+        answer = answer.ToUpper();
+        SetRevealByErrors();
+        typedText.text = "";
+        if (resultText) resultText.text = "";
+        RefreshBackspace();
+
+        SpawnButtons();
+    }
+
+    void SpawnButtons()
+    {
+        List<char> letters = new List<char>(answer.ToCharArray());
+
+        while (letters.Count < totalButtons)
+            letters.Add((char)('А' + Random.Range(0, 32))); // русские А-Я (32)
+
+        // перемешать
+        for (int i = 0; i < letters.Count; i++)
+        {
+            int j = Random.Range(i, letters.Count);
+            (letters[i], letters[j]) = (letters[j], letters[i]);
+        }
+
+        foreach (char c in letters)
+        {
+            var b = Instantiate(buttonPrefab, buttonsParent);
+            b.Setup(this, c);
+        }
+    }
+
+    public void AddLetter(LetterButton b)
+    {
+        if (won) return;
+
+        typed += b.letter;
+        typedText.text = typed;
+
+        b.SetEnabled(false);
+        pressed.Push(b);
+
+        RefreshBackspace();
+    }
+
+    public void Backspace()
+    {
+        if (won) return;
+        if (typed.Length == 0) return;
+
+        typed = typed.Substring(0, typed.Length - 1);
+        typedText.text = typed;
+
+        var last = pressed.Pop();
+        last.SetEnabled(true);
+
+        RefreshBackspace();
+    }
+
+    public void CheckAnswer()
+    {
+        if (won) return;
+
+        if (typed == answer)
+        {
+            won = true;
+            picture.fillAmount = 1f;
+            if (resultText) resultText.text = typed; // “тот же текст”
+            checkButton.interactable = false;
+            backspaceButton.interactable = false;
+            StartCoroutine(GoMenuAfter4());
+            return;
+        }
+
+        errors++;
+        SetRevealByErrors();
+        if (resultText) resultText.text = "Неверно";
+    }
+
+    void SetRevealByErrors()
+    {
+        // 0 ошибок=25%, 1=50%, 2=75%, 3+=100%
+        float[] a = { 0.25f, 0.50f, 0.75f, 1.00f };
+        picture.fillAmount = a[Mathf.Clamp(errors, 0, 3)];
+    }
+
+    void RefreshBackspace()
+    {
+        backspaceButton.interactable = typed.Length > 0 && !won;
+    }
+
+    IEnumerator GoMenuAfter4()
+    {
+        yield return new WaitForSeconds(4f);
+        SceneManager.LoadScene("MainMenu"); // имя сцены меню
+    }
+}
+```
+
+---
+
+## 2) Скрипт кнопки буквы: LetterButton.cs
+
+```csharp
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+
+public class LetterButton : MonoBehaviour
+{
+    public TMP_Text label;
+    public char letter;
+
+    QuizGame game;
+    Button btn;
+
+    public void Setup(QuizGame g, char c)
+    {
+        game = g;
+        letter = c;
+        if (!btn) btn = GetComponent<Button>();
+        label.text = c.ToString();
+        btn.onClick.AddListener(() => game.AddLetter(this));
+        SetEnabled(true);
+    }
+
+    public void SetEnabled(bool enabled)
+    {
+        if (!btn) btn = GetComponent<Button>();
+        btn.interactable = enabled;
+    }
+}
+```
+
+---
+
+## 3) (Опционально) меню: MainMenu.cs
+
+```csharp
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+public class MainMenu : MonoBehaviour
+{
+    public void Play() => SceneManager.LoadScene("Game");
+}
+```
+
+---
+
+## Что куда привязать в Unity (минимальный чеклист)
+
+**Сцены**
+- Создай 2 сцены и добавь в Build Settings:
+  - `MainMenu`
+  - `Game`
+
+**Game-сцена UI**
+- `Canvas` → `Image` (картинка):
+  - `Image Type = Filled`
+  - `Fill Method = Radial 360` (это твой “Round”)
+  - `Fill Amount` можно любой — скрипт выставит сам
+- `TMP_Text` для введённых букв (например “TypedText”)
+- Кнопки:
+  - `CheckButton` → OnClick: перетащи объект со `QuizGame` → `QuizGame.CheckAnswer()`
+  - `BackspaceButton` → OnClick: `QuizGame.Backspace()`
+- Контейнер для букв (например `LettersPanel`) + `GridLayoutGroup`
+
+**Префаб кнопки буквы**
+- Обычный `Button` + внутри `TMP_Text`
+- На корень кнопки повесь `LetterButton`
+- В поле `label` перетащи внутренний `TMP_Text`
+- Сделай prefab и назначь его в `QuizGame.buttonPrefab`
+
+**Объект-менеджер**
+- Пустой объект `QuizGame` (в сцене Game) + компонент `QuizGame`
+- В инспекторе у `QuizGame` заполни:
+  - `picture` = твой Image
+  - `typedText` = текст ввода
+  - `resultText` = можно не ставить (или поставить маленький текст “Неверно”)
+  - `buttonsParent` = LettersPanel (Transform)
+  - `buttonPrefab` = prefab кнопки буквы
+  - `checkButton`, `backspaceButton`
+
+**MainMenu-сцена**
+- Кнопка “Play” → OnClick: объект с `MainMenu` → `MainMenu.Play()`
+
+---
+
+Если хочешь, скажи: **русский алфавит точно нужен или латиница**, и сколько **всего кнопок** (12/16/20) — подстрою генерацию букв под твой вариант “подходящие + случайные” максимально предсказуемо для чемпионата.

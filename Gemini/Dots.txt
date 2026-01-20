@@ -1,0 +1,231 @@
+User: Мне нужно разработать 2д мини игру на юнити
+Игра для андроида
+Сетка сделана через тайлмап
+Твоя задача сделать только код для игры и сказать что куда привязать
+Пиши МАКСИМАЛЬНО короткий код чтобы я мог запомнить и повторить код по памяти завтра на чемпионате за полчаса
+
+
+Мини-игра 4: Соединяй точки.
+
+Цель игры: Соединить точки одного цвета на игровом поле.
+1. Игровое поле:
+	Поле представляет собой прямоугольную сетку, размер которой может варьироваться: 3×4, 4×5 и 5×7 клеток (В зависимости от уровня, уровень определяется через статическую переменную и активируется нужное поле).
+	Здания и прочие объекты (камни, дерево, кусты, водоемы и т.д.) недоступны для прохода — игрок может соединять точки одного цвета через пустые клетки.
+	На поле размещены:
+•	Цветные стартовые точка (например, автобус, метро, поезд, автомобиль).
+•	Цветные точки назначения (школа, больница, магазин и т.п.).
+•	Препятствия (здания, камни, дерево, кусты, водоемы и т.п.).
+	Стартовые точки, точки назначения и препятствия задаются через тайлмап
+	В верхней части экрана расположен таймер, информирующий игрока об оставшемся времени (сделан черзе отдельный скрипт).
+2. Начальное состояние
+	При начале уровня:
+•	Игрок видит полную карту с цветными точками.
+•	Маршруты не построены.
+•	Индикатор таймера отображает – 40 секунд.
+	Игрок может начать проводить маршрут с любой стартовой точки и должен довести до точки назначения того же цвета.
+3. Механика взаимодействия
+	Игрок строит маршрут проведением пальца по клеткам (от точки к точке).
+	При касании и движении:
+•	Визуально отображается линия маршрута (цветная полупрозрачная линия).
+•	При достижении точки — маршрут "защёлкивается".
+	Ограничения:
+•	Нельзя проходить дважды по одной и той же клетке.
+•	Нельзя выходить за пределы поля.
+•	Нельзя проходить сквозь препятствий.
+4. Условия победы:
+	Стартовые точки соединены с точками назначения (Красная стартовая с красной назначения и т.п.)
+	Не нарушает правила (нет повторных маршрутов, нет выхода за пределы).
+	Уложился во времени.
+	По достижении победы:
+•	Игра переходит в главное меню или в финальное состояние (экран победы).
+5. Условия поражения:
+	Прошёл дважды по одному маршруту.
+	На индикаторе таймера отображается – 0 секунд.
+
+
+GitHub Copilot: Enable Gemini 3 Pro (Preview) for all clients
+[object Object]
+
+User: @agent Enable: "Enable Gemini 3 Pro (Preview) for all clients"
+
+GitHub Copilot: Это задача для хардкорного спидрана. Я убрал всё лишнее.
+Мы используем **один скрипт управления** и **один скрипт таймера**.
+
+### Стратегия для запоминания:
+1.  **Логика:** `Update` ловит нажатие (Start), удержание (Draw), отпускание (Cancel).
+2.  **Сетка:** Используем `Tilemap`. Если тайл имеет имя "Red_S" (Start) или "Red_E" (End) - это точки. "Wall" - препятствие.
+3.  **Линия:** Используем `LineRenderer`.
+
+---
+
+### 1. Подготовка сцены (Unity)
+
+1.  Создай **Tilemap** (Grid -> 2D Object -> Tilemap -> Rectangular). Назови слой **"Map"**.
+2.  Нарисуй уровень:
+    *   Тайлы для старта назови: `R_S` (Красный Старт), `G_S` (Зеленый Старт).
+    *   Тайлы финиша: `R_E` (Красный Финиш), `G_E` (Зеленый Финиш).
+    *   Препятствия: Любой тайл с именем `Wall` (или просто любой, кроме пустоты, проверим в коде).
+3.  Создай префаб линии:
+    *   Создай пустой объект, добавь `LineRenderer`.
+    *   Ширина: 0.2. Материал: Sprites-Default.
+    *   Сделай из него префаб и удали со сцены.
+
+---
+
+### 2. Скрипт 1: Timer (Максимально простой)
+
+```csharp
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.SceneManagement;
+
+public class Timer : MonoBehaviour
+{
+    public Text timerText;
+    float time = 40;
+    public static bool IsGameOver;
+
+    void Start() => IsGameOver = false;
+
+    void Update()
+    {
+        if (IsGameOver) return;
+        
+        time -= Time.deltaTime;
+        timerText.text = Mathf.Ceil(time).ToString();
+
+        if (time <= 0)
+        {
+            Debug.Log("Lose"); // Или SceneManager.LoadScene(0);
+            IsGameOver = true;
+        }
+    }
+}
+```
+
+---
+
+### 3. Скрипт 2: GameController (Вся логика)
+
+Запоминай паттерны: `MouseDown` (начало), `MouseDrag` (рисование), `MouseUp` (конец).
+
+```csharp
+using UnityEngine;
+using UnityEngine.Tilemaps;
+using System.Collections.Generic;
+
+public class GameController : MonoBehaviour
+{
+    public static int Level = 1; // Статическая переменная уровня
+    public LevelData[] levels;   // Массив объектов уровней (Grid'ы)
+    public LineRenderer linePrefab;
+    
+    private Tilemap map;
+    private LineRenderer currentLine;
+    private List<Vector3> points = new List<Vector3>();
+    private string targetColor; // Например "R" от "R_S"
+    private int linesCompleted = 0;
+    private int totalPairs = 3; // Можно задать вручную
+
+    void Start()
+    {
+        // Активируем нужный уровень и берем его Tilemap
+        levels[Level-1].gameObject.SetActive(true);
+        map = levels[Level-1].GetComponentInChildren<Tilemap>();
+    }
+
+    void Update()
+    {
+        if (Timer.IsGameOver) return;
+
+        Vector3 worldPos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        worldPos.z = 0;
+        Vector3Int cell = map.WorldToCell(worldPos);
+        TileBase tile = map.GetTile(cell);
+
+        // 1. НАЖАЛИ: Ищем старт (имя заканчивается на _S)
+        if (Input.GetMouseButtonDown(0))
+        {
+            if (tile != null && tile.name.EndsWith("_S"))
+            {
+                CreateLine(tile.name, cell);
+            }
+        }
+        // 2. ДЕРЖИМ: Рисуем линию
+        else if (Input.GetMouseButton(0) && currentLine != null)
+        {
+            TryAddPoint(cell, tile);
+        }
+        // 3. ОТПУСТИЛИ: Если не дошли до конца — удаляем
+        else if (Input.GetMouseButtonUp(0))
+        {
+            if (currentLine != null) Destroy(currentLine.gameObject);
+            currentLine = null;
+        }
+    }
+
+    void CreateLine(string tileName, Vector3Int cell)
+    {
+        currentLine = Instantiate(linePrefab);
+        points.Clear();
+        points.Add(map.GetCellCenterWorld(cell));
+        
+        targetColor = tileName.Substring(0, 1); // Берем "R" из "R_S"
+        UpdateLineVisual();
+    }
+
+    void TryAddPoint(Vector3Int cell, TileBase tile)
+    {
+        Vector3 newPos = map.GetCellCenterWorld(cell);
+        if (points.Contains(newPos)) return; // Нельзя ходить по себе
+        
+        // Проверка: клетка соседняя? (дистанция == 1)
+        if (Vector3.Distance(points[points.Count - 1], newPos) > 1.2f) return;
+
+        // Если препятствие (не старт/финиш этого цвета и не пустота)
+        if (tile != null && !tile.name.StartsWith(targetColor)) return;
+
+        // Добавляем точку
+        points.Add(newPos);
+        UpdateLineVisual();
+
+        // Если это Финиш (_E) и цвет совпадает
+        if (tile != null && tile.name == targetColor + "_E")
+        {
+            currentLine = null; // "Защелкиваем" линию (отцепляем от управления)
+            linesCompleted++;
+            CheckWin();
+        }
+    }
+
+    void UpdateLineVisual()
+    {
+        currentLine.positionCount = points.Count;
+        currentLine.SetPositions(points.ToArray());
+    }
+
+    void CheckWin()
+    {
+        if (linesCompleted >= totalPairs) Debug.Log("WIN!");
+    }
+}
+```
+
+---
+
+### Что куда привязать в Инспекторе:
+
+1.  Создай пустой объект **GameManager**, кинь на него скрипт `GameController`.
+    *   **Level Data:** Вставь сюда свои Grid'ы (уровни 3x4, 4x5 и т.д.).
+    *   **Line Prefab:** Вставь сделанный префаб линии.
+    *   **Total Pairs:** Укажи, сколько пар нужно соединить для победы (для теста поставь 3).
+2.  Создай объект **Canvas -> Text**, кинь на Canvas скрипт `Timer`.
+    *   **Timer Text:** Перетащи туда созданный текст.
+
+### Короткое объяснение логики (запомни это!):
+*   Получаем позицию мыши -> переводим в клетку (`WorldToCell`).
+*   Если **MouseDown** на тайле с именем `..._S` (Start) -> Создаем `LineRenderer`. Запоминаем первую букву имени как цвет (`R`).
+*   Если **MouseDrag** на соседнюю клетку:
+    *   Она пустая? -> Добавляем точку.
+    *   Она `..._E` (End) и с той же буквой (`R`)? -> Победа линии.
+*   Если **MouseUp** и не дошли -> Удаляем линию.

@@ -1,0 +1,292 @@
+User: Мне нужно разработать 2д мини игру на юнити
+Игра для андроида
+Сетка сделана через тайлмап
+Твоя задача сделать только код для игры и сказать что куда привязать
+Пиши МАКСИМАЛЬНО короткий код чтобы я мог запомнить и повторить код по памяти завтра на чемпионате за полчаса
+
+
+Мини-игра 4: Соединяй точки.
+
+Цель игры: Соединить точки одного цвета на игровом поле.
+1. Игровое поле:
+	Поле представляет собой прямоугольную сетку, размер которой может варьироваться: 3×4, 4×5 и 5×7 клеток (В зависимости от уровня, уровень определяется через статическую переменную и активируется нужное поле).
+	Здания и прочие объекты (камни, дерево, кусты, водоемы и т.д.) недоступны для прохода — игрок может соединять точки одного цвета через пустые клетки.
+	На поле размещены:
+•	Цветные стартовые точка (например, автобус, метро, поезд, автомобиль).
+•	Цветные точки назначения (школа, больница, магазин и т.п.).
+•	Препятствия (здания, камни, дерево, кусты, водоемы и т.п.).
+	Стартовые точки, точки назначения и препятствия задаются через тайлмап
+	В верхней части экрана расположен таймер, информирующий игрока об оставшемся времени (сделан черзе отдельный скрипт).
+2. Начальное состояние
+	При начале уровня:
+•	Игрок видит полную карту с цветными точками.
+•	Маршруты не построены.
+•	Индикатор таймера отображает – 40 секунд.
+	Игрок может начать проводить маршрут с любой стартовой точки и должен довести до точки назначения того же цвета.
+3. Механика взаимодействия
+	Игрок строит маршрут проведением пальца по клеткам (от точки к точке).
+	При касании и движении:
+•	Визуально отображается линия маршрута (цветная полупрозрачная линия).
+•	При достижении точки — маршрут "защёлкивается".
+	Ограничения:
+•	Нельзя проходить дважды по одной и той же клетке.
+•	Нельзя выходить за пределы поля.
+•	Нельзя проходить сквозь препятствий.
+4. Условия победы:
+	Стартовые точки соединены с точками назначения (Красная стартовая с красной назначения и т.п.)
+	Не нарушает правила (нет повторных маршрутов, нет выхода за пределы).
+	Уложился во времени.
+	По достижении победы:
+•	Игра переходит в главное меню или в финальное состояние (экран победы).
+5. Условия поражения:
+	Прошёл дважды по одному маршруту.
+	На индикаторе таймера отображается – 0 секунд.
+
+
+GitHub Copilot: Ниже — максимально короткий набор скриптов (2 файла) + что куда привязать. Логика читает старт/финиш/препятствия прямо из Tilemap по TileBase.
+
+---
+
+## 1) `LevelState.cs`
+```csharp
+public static class LevelState
+{
+    public static int Level; // 0..N-1
+}
+```
+
+## 2) `LevelLoader.cs`
+Активирует нужное поле (3×4 / 4×5 / 5×7) по `LevelState.Level`.
+```csharp
+using UnityEngine;
+
+public class LevelLoader : MonoBehaviour
+{
+    public GameObject[] boards; // разные поля (каждое со своим Tilemap)
+
+    void Awake()
+    {
+        for (int i = 0; i < boards.Length; i++) boards[i].SetActive(i == LevelState.Level);
+    }
+}
+```
+
+## 3) `ConnectDotsGame.cs` (вся игра)
+```csharp
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.Tilemaps;
+
+public class ConnectDotsGame : MonoBehaviour
+{
+    [Header("Links")]
+    public Tilemap map;
+    public Camera cam;
+
+    [Header("Tiles (same index = same color)")]
+    public TileBase[] startTiles;
+    public TileBase[] endTiles;
+    public TileBase[] blockTiles;
+
+    [Header("Looks")]
+    public Color[] colors; // same length as startTiles
+    public float lineW = .18f;
+    public float alpha = .55f;
+
+    [Header("Win/Lose")]
+    public string winScene = "Menu";
+    public string loseScene = "Menu";
+
+    struct EP { public int c; public bool isStart; }
+    Dictionary<Vector3Int, EP> ep = new();
+    HashSet<Vector3Int> blocked = new();
+    HashSet<Vector3Int> occupied = new(); // клетки уже "закреплённых" линий
+
+    List<Vector3Int> cur = new();
+    int curC = -1;
+    Vector3Int curStart;
+    bool dragging;
+
+    List<Vector3Int>[] locked;      // по цветам: список клеток
+    LineRenderer[] lines;           // по цветам: линия
+    int done;
+
+    void Start()
+    {
+        if (!cam) cam = Camera.main;
+        map.CompressBounds();
+
+        int n = startTiles.Length;
+        locked = new List<Vector3Int>[n];
+        lines = new LineRenderer[n];
+        for (int i = 0; i < n; i++) locked[i] = new List<Vector3Int>();
+
+        var b = map.cellBounds;
+        for (int x = b.xMin; x < b.xMax; x++)
+        for (int y = b.yMin; y < b.yMax; y++)
+        {
+            var p = new Vector3Int(x,y,0);
+            var t = map.GetTile(p);
+            if (!t) continue;
+
+            for (int i = 0; i < blockTiles.Length; i++) if (t == blockTiles[i]) { blocked.Add(p); goto Next; }
+            for (int i = 0; i < startTiles.Length; i++) if (t == startTiles[i]) { ep[p] = new EP{c=i,isStart=true}; goto Next; }
+            for (int i = 0; i < endTiles.Length; i++)   if (t == endTiles[i])   { ep[p] = new EP{c=i,isStart=false}; goto Next; }
+            Next: ;
+        }
+    }
+
+    void Update()
+    {
+        if (Input.GetMouseButtonDown(0)) Begin();
+        if (dragging && Input.GetMouseButton(0)) Drag();
+        if (dragging && Input.GetMouseButtonUp(0)) Cancel();
+    }
+
+    void Begin()
+    {
+        var cell = CellUnderFinger();
+        if (!ep.TryGetValue(cell, out var e)) return;
+
+        curC = e.c;
+        curStart = cell;
+        dragging = true;
+
+        ClearColor(curC); // перерисовка разрешена
+        cur.Clear();
+        cur.Add(cell);
+
+        EnsureLine(curC);
+        Draw(curC, cur);
+    }
+
+    void Drag()
+    {
+        var cell = CellUnderFinger();
+        if (cur.Count > 0 && cell == cur[^1]) return;
+        if (!Inside(cell) || blocked.Contains(cell)) return;
+
+        // нельзя заходить на чужие точки
+        if (ep.TryGetValue(cell, out var e2) && e2.c != curC) return;
+
+        // только 4-соседа
+        if (cur.Count > 0 && (Mathf.Abs(cell.x - cur[^1].x) + Mathf.Abs(cell.y - cur[^1].y) != 1)) return;
+
+        // откат на шаг назад (чтобы удобно)
+        if (cur.Count >= 2 && cell == cur[^2])
+        {
+            cur.RemoveAt(cur.Count - 1);
+            Draw(curC, cur);
+            return;
+        }
+
+        // повтор клетки в текущей линии = поражение
+        if (cur.Contains(cell)) { Lose(); return; }
+
+        // вход в уже занятые клетки (закреплённые линии) = поражение
+        if (occupied.Contains(cell)) { Lose(); return; }
+
+        cur.Add(cell);
+        Draw(curC, cur);
+
+        // дошёл до парной точки того же цвета -> защёлкнуть
+        if (ep.TryGetValue(cell, out var e) && e.c == curC && cell != curStart)
+        {
+            Lock(curC, cur);
+            dragging = false;
+            curC = -1;
+        }
+    }
+
+    void Cancel()
+    {
+        dragging = false;
+        if (curC >= 0) Draw(curC, locked[curC]); // вернуть закреплённое (или пусто)
+        curC = -1;
+    }
+
+    void Lock(int c, List<Vector3Int> path)
+    {
+        locked[c] = new List<Vector3Int>(path);
+        foreach (var p in locked[c]) if (!ep.ContainsKey(p)) occupied.Add(p); // точки можно "разрешить" повторно
+        done = 0;
+        for (int i = 0; i < locked.Length; i++) if (locked[i].Count > 1) done++;
+        if (done == locked.Length) Win();
+    }
+
+    void ClearColor(int c)
+    {
+        foreach (var p in locked[c]) if (!ep.ContainsKey(p)) occupied.Remove(p);
+        locked[c].Clear();
+        EnsureLine(c);
+        lines[c].positionCount = 0;
+    }
+
+    void EnsureLine(int c)
+    {
+        if (lines[c]) return;
+        var go = new GameObject("Line_" + c);
+        go.transform.SetParent(transform, false);
+        var lr = go.AddComponent<LineRenderer>();
+        lr.material = new Material(Shader.Find("Sprites/Default"));
+        lr.useWorldSpace = true;
+        lr.numCapVertices = 4;
+        lr.numCornerVertices = 4;
+        lr.startWidth = lr.endWidth = lineW;
+        var col = colors.Length > c ? colors[c] : Color.white;
+        col.a = alpha;
+        lr.startColor = lr.endColor = col;
+        lines[c] = lr;
+    }
+
+    void Draw(int c, List<Vector3Int> path)
+    {
+        var lr = lines[c];
+        lr.positionCount = path.Count;
+        for (int i = 0; i < path.Count; i++)
+            lr.SetPosition(i, map.GetCellCenterWorld(path[i]));
+    }
+
+    Vector3Int CellUnderFinger()
+    {
+        var w = cam.ScreenToWorldPoint(Input.mousePosition);
+        w.z = 0;
+        return map.WorldToCell(w);
+    }
+
+    bool Inside(Vector3Int p) => map.cellBounds.Contains(p);
+
+    void Win()  { if (!string.IsNullOrEmpty(winScene))  SceneManager.LoadScene(winScene); }
+    void Lose() { if (!string.IsNullOrEmpty(loseScene)) SceneManager.LoadScene(loseScene); }
+
+    // привяжи это из таймера, когда время = 0
+    public void TimeUp() => Lose();
+}
+```
+
+---
+
+## Что куда привязать (быстро)
+1) На сцене:
+- Создай пустой объект `Game`.
+- Повесь на него `ConnectDotsGame`.
+- В `map` перетащи Tilemap, где лежат точки/препятствия (тот самый тайлмап).
+- В `cam` перетащи Main Camera (или оставь пустым — возьмёт `Camera.main`).
+
+2) В инспекторе `ConnectDotsGame`:
+- `startTiles` — массив Tile’ов стартовых точек (по цветам, порядок важен).
+- `endTiles` — массив Tile’ов точек назначения (тот же порядок цветов).
+- `colors` — массив цветов (тот же порядок).
+- `blockTiles` — все Tile’ы препятствий (камни/деревья/вода/здания и т.д.).
+- `winScene` / `loseScene` — название сцены меню/победы/поражения.
+
+3) Разные размеры поля (уровни):
+- Сделай 3 объекта `Board_0`, `Board_1`, `Board_2` (в каждом свой Grid+Tilemap под 3×4 / 4×5 / 5×7).
+- На сцене добавь `LevelLoader` и закинь туда эти board-объекты в массив `boards`.
+- Перед загрузкой сцены уровня из меню поставь `LevelState.Level = 0/1/2`.
+
+4) Таймер (твой отдельный скрипт):
+- Когда время стало 0 — вызови `ConnectDotsGame.TimeUp()` (например, через UnityEvent/ссылку).
+
+Хочешь — скажи, сколько цветов максимум (2/3/4?) и как у тебя названы тайлы (скрин/список), я подгоню массивы/логику ещё короче именно под твой набор.

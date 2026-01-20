@@ -1,0 +1,197 @@
+User: Мне нужно разработать 2д мини игру на юнити
+Игра для андроида
+Сетка сделана через тайлмап
+Твоя задача сделать только код для игры и сказать что куда привязать
+Пиши МАКСИМАЛЬНО простой и короткий код чтобы я мог запомнить и повторить код по памяти завтра на чемпионате за полчаса
+
+ИМини-игра 3: Лугомания.
+
+Цель игры: За ограниченное время засеять лугом все коричневые участки игрового поля, превратив их в зелёные.
+1. Игровое поле:
+	Поле представляет собой прямоугольную сетку, размер которой может варьироваться: 3×4, 4×5 и 5×7 клеток (В зависимости от уровня, уровни на одной сцене, при запуске берётся статическая переменная и определяет какое поле будет)
+2. Состояние клеток:
+	Каждая клетка может находиться в одном из двух состояний:
+•	Коричневая — не озеленённый участок (по умолчанию).
+•	Зелёная — полностью озеленённый участок (луг успешно посажен).
+3. Начальное состояние уровня:
+	При старте уровня поле содержит смешанное количество коричневых и зелёных клеток.
+	Распределение изначально зелёных клеток задаётся в конфигурации уровня.
+4. Механика взаимодействия:
+	Игрок касается пальцем по коричневой клетке, чтобы «посадить» на ней луг.
+	При касании:
+•	Коричневая клетка немедленно становится зелёной.
+•	Клетка больше не может быть изменена (нельзя повторно касаться зелёной клетки).
+	Повторное касание зелёной клетки игнорируется.
+5. Условие победы:
+	Победа наступает, когда все клетки на поле стали зелёными.
+	По достижении победы через секунду:
+•	Игра переходит на следующий уровень на сцену MainMeny или на экран победы если это последний уровень.
+6. Условия поражения
+	Если таймер достиг нуля, но не все клетки стали зелёными — игрок проигрывает.
+(Таймер будет реализован через отдельный скрипт)
+
+GitHub Copilot: Enable Gemini 3 Pro (Preview) for all clients
+[object Object]
+
+User: @agent Enable: "Enable Gemini 3 Pro (Preview) for all clients"
+
+GitHub Copilot: Вот максимально простой и короткий код для реализации "Лугомании", оптимизированный для запоминания. Я разделил его на два скрипта: один для логики игры, другой для таймера (как ты и просил).
+
+### 1. `GameManager.cs` (Основная логика)
+Этот скрипт отвечает за генерацию поля, клики и победу.
+
+```csharp
+using UnityEngine;
+using UnityEngine.Tilemaps;
+
+public class GameManager : MonoBehaviour
+{
+    public static int Level = 1; // Уровень: 1, 2 или 3
+    public Tilemap map;
+    public TileBase brownTile, greenTile;
+    
+    // Размеры уровней: ширина и высота
+    int[] widths = { 3, 4, 5 };
+    int[] heights = { 4, 5, 7 };
+    
+    int totalTiles, greenCount;
+
+    void Start()
+    {
+        GenerateLevel();
+    }
+
+    void GenerateLevel()
+    {
+        // Выбираем размеры по текущему уровню (индекс = уровень - 1)
+        int w = widths[Level - 1];
+        int h = heights[Level - 1];
+        totalTiles = w * h;
+        greenCount = 0;
+
+        // Центрируем камеру (простая формула)
+        Camera.main.transform.position = new Vector3(w / 2f, h / 2f, -10);
+
+        for (int x = 0; x < w; x++)
+        {
+            for (int y = 0; y < h; y++)
+            {
+                // 30% шанс, что клетка сразу зеленая
+                bool isGreen = Random.value < 0.3f; 
+                Vector3Int pos = new Vector3Int(x, y, 0);
+                
+                if (isGreen) {
+                    map.SetTile(pos, greenTile);
+                    greenCount++;
+                } else {
+                    map.SetTile(pos, brownTile);
+                }
+            }
+        }
+    }
+
+    void Update()
+    {
+        // Проверка клика (тапа)
+        if (Input.GetMouseButtonDown(0))
+        {
+            Vector3 worldPoint = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            Vector3Int cellPosition = map.WorldToCell(worldPoint);
+
+            // Если кликнули на коричневую плитку
+            if (map.GetTile(cellPosition) == brownTile)
+            {
+                map.SetTile(cellPosition, greenTile);
+                greenCount++;
+                CheckWin();
+            }
+        }
+    }
+
+    void CheckWin()
+    {
+        if (greenCount >= totalTiles)
+        {
+            Invoke("NextLevel", 1f); // Ждем 1 секунду
+        }
+    }
+
+    void NextLevel()
+    {
+        Level++;
+        if (Level > 3) 
+        {
+            // Конец игры, загружаем меню
+            UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
+        }
+        else 
+        {
+            // Перезагружаем эту же сцену для следующего уровня
+            UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name); 
+        }
+    }
+}
+```
+
+### 2. `Timer.cs` (Таймер)
+Простой таймер обратного отсчета.
+
+```csharp
+using UnityEngine;
+using UnityEngine.UI;
+
+public class Timer : MonoBehaviour
+{
+    public Text timerText;
+    public float timeLeft = 30f; // Время на уровень
+    bool gameEnded = false;
+
+    void Update()
+    {
+        if (gameEnded) return;
+
+        timeLeft -= Time.deltaTime;
+        timerText.text = Mathf.Ceil(timeLeft).ToString();
+
+        if (timeLeft <= 0)
+        {
+            gameEnded = true;
+            Debug.Log("Game Over"); 
+            // Тут можно добавить SceneManager.LoadScene("MainMenu");
+        }
+    }
+}
+```
+
+---
+
+### Инструкция по настройке в Unity (Что куда привязать):
+
+1.  **Сцена:**
+    *   Создай **Grid** -> **Tilemap** (ПКМ в иерархии -> 2D Object -> Tilemap -> Rectangular).
+    *   Настрой камеру: `Size` примерно 5 (чтобы влезла сетка 5x7).
+
+2.  **Тайлы (Плитки):**
+    *   Создай два спрайта (картинки): `Brown` (квадрат коричневого цвета) и `Green` (квадрат зеленого цвета).
+    *   Создай из них **Tile Assets**: (В окне Project ПКМ -> Create -> 2D -> Tiles -> Scriptable Tile). Назови их `BrownTile` и `GreenTile`.
+
+3.  **Скрипт GameManager:**
+    *   Создай пустой объект, назови `Manager`.
+    *   Кинь на него скрипт `GameManager`.
+    *   **Map:** Перетащи туда объект `Tilemap` из сцены.
+    *   **Brown Tile / Green Tile:** Перетащи созданные ассеты тайлов.
+
+4.  **Скрипт Timer:**
+    *   Создай **UI** -> **Text** (Legacy). Размести его в углу экрана.
+    *   На любой удобный объект (можно на тот же `Manager`) кинь скрипт `Timer`.
+    *   **Timer Text:** Перетащи туда созданный UI Text.
+
+5.  **Настройка Build Settings:**
+    *   Добавь текущую сцену в Build Settings.
+    *   Добавь сцену "MainMenu" (создай пустую, если её нет), чтобы переход работал.
+
+### Как это запомнить:
+1.  **GameManager**: В `Start` делаем циклы `for` по ширине/высоте. Внутри `if (Random < 0.3)` ставим зеленую, иначе коричневую.
+2.  **Клики**: В `Update` используем `ScreenToWorldPoint` + `WorldToCell`. Проверяем: `if tile == brown` -> `SetTile(green)`.
+3.  **Победа**: Счетчик `greenCount`. Если равен `totalTiles` -> `Invoke` (задержка) -> `LoadScene`.
+4.  **Таймер**: `timeLeft -= Time.deltaTime`. Если `<= 0` -> проиграл.

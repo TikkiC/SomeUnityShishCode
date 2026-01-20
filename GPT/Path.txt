@@ -1,0 +1,203 @@
+User: Мне нужно разработать 2д мини игру на юнити
+Карта строится через tilemap
+Игра для андроида
+Твоя задача сделать только код для игры и сказать что куда привязать
+Уровни заранее будут подготовены (т.е. не нужно их создавать через код и т.п.)
+Пиши МАКСИМАЛЬНО простым кодом чтобы я мог запомнить и повторить код по памяти завтра на чемпионате за полчаса
+
+Делаешь по моему описанию
+Есть тайлмапы
+Первый это просто мир
+Второй это подсветка
+
+При нажатии на клетку проверяется что эта клетка в последовательности правильная и подсвечивается, если клетка не правильная то в консоль пишется Ошибка 
+
+GitHub Copilot: Ниже максимально простой вариант: **1 скрипт**, 2 Tilemap’а (мир + подсветка). Уровни ты делаешь руками, код только проверяет последовательность клеток.
+
+## 1) Скрипт `TileSequenceGame.cs`
+
+Создай C# скрипт с таким кодом:
+
+```csharp
+using UnityEngine;
+using UnityEngine.Tilemaps;
+
+public class TileSequenceGame : MonoBehaviour
+{
+    public Camera cam;
+
+    public Tilemap worldTilemap;      // тайлмап "мир"
+    public Tilemap highlightTilemap;  // тайлмап "подсветка"
+    public TileBase highlightTile;    // тайл подсветки (любой)
+
+    public Transform[] orderPoints;   // точки в нужном порядке (поставишь на клетки)
+
+    int index = 0;
+
+    void Start()
+    {
+        if (cam == null) cam = Camera.main;
+        highlightTilemap.ClearAllTiles();
+        index = 0;
+    }
+
+    void Update()
+    {
+        if (TryGetTapPosition(out Vector3 worldPos))
+        {
+            Vector3Int cell = worldTilemap.WorldToCell(worldPos);
+
+            // если тыкнул не по тайлу мира — считаем ошибкой
+            if (!worldTilemap.HasTile(cell))
+            {
+                Debug.Log("Ошибка");
+                return;
+            }
+
+            Vector3Int need = worldTilemap.WorldToCell(orderPoints[index].position);
+
+            if (cell == need)
+            {
+                highlightTilemap.SetTile(cell, highlightTile);
+                index++;
+
+                if (index >= orderPoints.Length)
+                    Debug.Log("Готово");
+            }
+            else
+            {
+                Debug.Log("Ошибка");
+            }
+        }
+    }
+
+    bool TryGetTapPosition(out Vector3 worldPos)
+    {
+        worldPos = Vector3.zero;
+
+        // Android / тач
+        if (Input.touchCount > 0)
+        {
+            Touch t = Input.GetTouch(0);
+            if (t.phase == TouchPhase.Began)
+            {
+                Vector3 p = t.position;
+                p.z = -cam.transform.position.z;
+                worldPos = cam.ScreenToWorldPoint(p);
+                return true;
+            }
+            return false;
+        }
+
+        // Мышь (для теста в редакторе)
+        if (Input.GetMouseButtonDown(0))
+        {
+            Vector3 p = Input.mousePosition;
+            p.z = -cam.transform.position.z;
+            worldPos = cam.ScreenToWorldPoint(p);
+            return true;
+        }
+
+        return false;
+    }
+}
+```
+
+## 2) Что куда привязать в Unity (очень конкретно)
+
+1) На сцене должно быть:
+- `Grid`
+  - `World` (Tilemap) — это “мир”
+  - `Highlight` (Tilemap) — это “подсветка” (расположен на том же Grid)
+
+2) Создай пустой объект `GameController` и повесь на него `TileSequenceGame`.
+
+3) В инспекторе у `GameController` заполни поля:
+- **Cam** → перетащи `Main Camera`
+- **World Tilemap** → перетащи Tilemap “World”
+- **Highlight Tilemap** → перетащи Tilemap “Highlight”
+- **Highlight Tile** → перетащи любой Tile (например, полупрозрачный)
+
+4) **Задание последовательности (самый простой способ):**
+- Создай пустой объект `Order` (для порядка).
+- Внутри него создай пустые объекты `P0`, `P1`, `P2`… (сколько нужно).
+- **Поставь каждый `P#` прямо на нужную клетку** (как маркеры).
+- В `orderPoints` задай размер массива и перетащи туда `P0, P1, P2…` **в правильном порядке**.
+
+## 3) Как это работает по твоему описанию
+- Тап по клетке → берём cell координату.
+- Сравниваем с ожидаемой следующей клеткой из последовательности.
+- Если правильно → ставим тайл подсветки на `Highlight` Tilemap.
+- Если неправильно → `Debug.Log("Ошибка")`.
+
+Если хочешь, могу добавить **кнопку “Сброс”** (очистка подсветки и возврат к первому шагу) тоже максимально простым кодом.
+
+User: зачем нужна камера в коде?
+
+GitHub Copilot: Камера нужна только для одного: **перевести координаты нажатия по экрану (пиксели) в координаты мира Unity**, чтобы понять, **какую клетку Tilemap ты нажал**.
+
+- `Input.mousePosition` и `Touch.position` дают позицию **на экране** (например, x=500, y=900).
+- `Tilemap.WorldToCell(...)` работает с **координатами мира** (метры Unity).
+- Поэтому делаем `cam.ScreenToWorldPoint(...)`, чтобы получить `worldPos`, и уже потом `worldTilemap.WorldToCell(worldPos)`.
+
+Если камеры нет (или она не та), ты не сможешь корректно определить клетку — будет “тык” не туда.
+
+Упростить можно так:
+- В инспекторе просто не заполняй `cam` — код сам возьмёт `Camera.main` в `Start()` (это камера с тегом `MainCamera`).
+
+Если хочешь совсем убрать поле `cam`, можно жёстко заменить везде на `Camera.main`, но это чуть менее надёжно (если вдруг в сцене несколько камер или тег забыли).
+
+User: Смотри у меня три уровня сделаны в одной сцене (При переходе на новый уровень сцена перезапускается и из памяти берёт какой сейчас уровень) и активирует в иерархии нужную сетку
+Сработает ли код в этом случае?
+
+GitHub Copilot: Сработает, но есть важное условие: **скрипт должен быть привязан к Tilemap/точкам именно текущего активного уровня** (или уметь переключаться на них сам).
+
+### Если у тебя сейчас `TileSequenceGame` настроен в инспекторе на один конкретный Grid/Tilemap
+- Тогда при запуске **он всегда будет работать только с тем уровнем**, на который ты его привязал.
+- Если ты активируешь другой Grid, а ссылки в скрипте остались на старый — проверка будет идти “не по тому” уровню.
+
+### Вариант 1 (самый простой для чемпионата): по одному контроллеру на уровень
+- В каждом `LevelRoot` (уровень в иерархии) сделай свой `GameController` с `TileSequenceGame`.
+- В инспекторе у каждого контроллера укажи **свои** `worldTilemap`, `highlightTilemap`, `orderPoints`.
+- При переключении уровня ты просто активируешь нужный `LevelRoot` (вместе с его контроллером) — и всё.
+
+Это реально самый “тупо-надежный” способ, без логики выбора.
+
+### Вариант 2 (один контроллер на сцену): данные по уровням
+Если хочешь один `GameController`, сделай так (тоже довольно просто):
+
+```csharp
+[System.Serializable]
+public class LevelData
+{
+    public GameObject root;
+    public Tilemap world;
+    public Tilemap highlight;
+    public Transform[] orderPoints;
+}
+
+public LevelData[] levels;
+int currentLevel;
+
+void Start()
+{
+    currentLevel = /* взять из памяти */;
+    for (int i = 0; i < levels.Length; i++)
+        levels[i].root.SetActive(i == currentLevel);
+
+    cam = Camera.main;
+
+    worldTilemap = levels[currentLevel].world;
+    highlightTilemap = levels[currentLevel].highlight;
+    orderPoints = levels[currentLevel].orderPoints;
+
+    highlightTilemap.ClearAllTiles();
+    index = 0;
+}
+```
+
+### Про порядок запуска (важно)
+Чтобы не было ситуации “скрипт стартанул, а нужный уровень ещё не активирован”:
+- Активируй нужный уровень **до** того, как начнёшь игру (лучше в `Awake()` или в начале `Start()` того же объекта, где висит `TileSequenceGame`).
+
+Если скажешь, как именно ты “берёшь из памяти” текущий уровень (PlayerPrefs? static переменная?), я подстрою самый короткий вариант под твой способ.

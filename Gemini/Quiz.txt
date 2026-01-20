@@ -1,0 +1,134 @@
+User: Мне нужно разработать 2д мини игру на юнити
+Игра для андроида
+Твоя задача сделать только код для игры и сказать что куда привязать
+Пиши МАКСИМАЛЬНО простой и короткий код чтобы я мог запомнить и повторить код по памяти завтра на чемпионате за полчаса
+
+Изображение находится в canvas, его нужно открывать через image type - Fill, Fillmethod - Round
+
+Мини игра викторина
+Есть слово которое нужно угадать по картинке
+Есть набор кнопок с буквами (Подходящие и случайные), после нажатия кнопки она больше не нажимается
+Есть текст в который заносятся нажатые буквы
+Есть кнопка проверки ответа и кнопка стереть последнюю букву (Отключенная кнопка должна вновь нажиматься)
+При неправильном ответе картинка раскрывается больше
+Без ошибок - 25%, 1 ошибка - 50%, 2 ошибки - 75%
+При третьей ошибке изображение полностью раскрываеться
+При правильном ответе изображение полностью раскрывается выводя тот же текст
+
+Через 4 секунды после победы сцена меняется на главное меню
+
+GitHub Copilot: Вот **супер-компактный** вариант, который реально выучить за 15-20 минут. Весь функционал в одном скрипте.
+
+### Что нужно сделать в Unity Editor (до кода):
+
+1.  **Создай UI:**
+    *   **Image (Картинка):** В инспекторе `Image Type` -> `Filled`, `Fill Method` -> `Radial 360`. Поставь `Fill Amount` на `0.25`.
+    *   **Text (Поле ввода):** Сделай пустым.
+    *   **Button (Буквы):** Создай одну кнопку, настрой размер, сделай из нее префаб (перетащи в папку) или просто скопируй её 10-12 раз на сцене.
+    *   **Button (Проверить):** Назови "Check".
+    *   **Button (Стереть):** Назови "Back".
+2.  **Сцена:** В `File -> Build Settings` добавь текущую сцену и сцену главного меню (назови её "Menu").
+
+---
+
+### КОД (GameController.cs)
+
+Запоминай логику: **Массивы, Стек, Простая математика.**
+
+```csharp
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.SceneManagement;
+using System.Collections.Generic; // Нужно для List и Stack
+
+public class GameController : MonoBehaviour
+{
+    public string word = "UNITY";    // Слово
+    public Image img;                // Картинка (Fill)
+    public Text resultText;          // Текст ввода
+    public Button[] letterBtns;      // Массив кнопок с буквами
+
+    Stack<Button> history = new Stack<Button>(); // История нажатий
+    int errors = 0;
+
+    void Start()
+    {
+        img.fillAmount = 0.25f; // Старт с 25%
+        SetupButtons();
+    }
+
+    void SetupButtons()
+    {
+        // 1. Собираем буквы: само слово + случайные
+        List<char> chars = new List<char>(word);
+        while (chars.Count < letterBtns.Length) 
+            chars.Add((char)Random.Range('A', 'Z' + 1));
+
+        // 2. Мешаем (однострочный шаффл)
+        chars.Sort((a, b) => Random.value > 0.5f ? 1 : -1);
+
+        // 3. Назначаем на кнопки
+        for (int i = 0; i < letterBtns.Length; i++)
+        {
+            Button btn = letterBtns[i];
+            string letter = chars[i].ToString();
+            
+            btn.GetComponentInChildren<Text>().text = letter;
+            btn.onClick.AddListener(() => TypeLetter(letter, btn)); // Лямбда
+        }
+    }
+
+    void TypeLetter(string letter, Button btn)
+    {
+        resultText.text += letter;
+        btn.interactable = false; // Отключаем кнопку
+        history.Push(btn);        // Запоминаем кнопку
+    }
+
+    public void OnBackspace()
+    {
+        if (history.Count > 0)
+        {
+            resultText.text = resultText.text.Substring(0, resultText.text.Length - 1);
+            history.Pop().interactable = true; // Возвращаем кнопку к жизни
+        }
+    }
+
+    public void OnCheck()
+    {
+        if (resultText.text == word)
+        {
+            img.fillAmount = 1; // Полностью открыть
+            Invoke("Win", 4);   // Ждать 4 сек
+        }
+        else
+        {
+            errors++;
+            // Логика: 0 ош=0.25, 1 ош=0.5, 2 ош=0.75, 3 ош=1.0
+            img.fillAmount = 0.25f + (errors * 0.25f);
+        }
+    }
+
+    void Win() => SceneManager.LoadScene("Menu");
+}
+```
+
+---
+
+### Куда что привязать (Drag & Drop):
+
+1.  Создай на сцене пустой объект **GameManager** и кинь на него этот скрипт.
+2.  **Img:** Перетащи туда твою картинку (Image).
+3.  **Result Text:** Перетащи туда текстовое поле, куда пишутся буквы.
+4.  **Letter Btns:**
+    *   В инспекторе скрипта найди `Letter Btns`.
+    *   Поставь `Size` (например, 10 или 12, сколько у тебя кнопок).
+    *   Перетащи все кнопки с буквами из иерархии в эти слоты.
+5.  **Кнопки управления (в инспекторе самих кнопок `On Click`):**
+    *   Кнопка **Стереть (Back)**: перетащи GameManager -> выбери функцию `OnBackspace()`.
+    *   Кнопка **Проверить (Check)**: перетащи GameManager -> выбери функцию `OnCheck()`.
+
+### Советы для чемпионата:
+*   **Случайная буква:** `(char)Random.Range('A', 'Z' + 1)` — это проще запомнить, чем писать массив алфавита вручную.
+*   **Сортировка:** `chars.Sort(...)` — запомни эту строку, она заменяет 10 строк сложного алгоритма перемешивания.
+*   **Invoke:** Используй `Invoke("Win", 4)`, чтобы не писать сложные корутины (`IEnumerator`) таймеров.

@@ -1,0 +1,192 @@
+User: Мне нужно разработать 2д мини игру на юнити
+Игра для андроида
+Сетка сделана через тайлмап
+Твоя задача сделать только код для игры и сказать что куда привязать
+Пиши МАКСИМАЛЬНО простой и короткий код чтобы я мог запомнить и повторить код по памяти завтра на чемпионате за полчаса
+
+ИМини-игра 3: Лугомания.
+
+Цель игры: За ограниченное время засеять лугом все коричневые участки игрового поля, превратив их в зелёные.
+1. Игровое поле:
+	Поле представляет собой прямоугольную сетку, размер которой может варьироваться: 3×4, 4×5 и 5×7 клеток (В зависимости от уровня, уровни на одной сцене, при запуске берётся статическая переменная и определяет какое поле будет)
+2. Состояние клеток:
+	Каждая клетка может находиться в одном из двух состояний:
+•	Коричневая — не озеленённый участок (по умолчанию).
+•	Зелёная — полностью озеленённый участок (луг успешно посажен).
+3. Начальное состояние уровня:
+	При старте уровня поле содержит смешанное количество коричневых и зелёных клеток.
+	Распределение изначально зелёных клеток задаётся в конфигурации уровня.
+4. Механика взаимодействия:
+	Игрок касается пальцем по коричневой клетке, чтобы «посадить» на ней луг.
+	При касании:
+•	Коричневая клетка немедленно становится зелёной.
+•	Клетка больше не может быть изменена (нельзя повторно касаться зелёной клетки).
+	Повторное касание зелёной клетки игнорируется.
+5. Условие победы:
+	Победа наступает, когда все клетки на поле стали зелёными.
+	По достижении победы через секунду:
+•	Игра переходит на следующий уровень на сцену MainMeny или на экран победы если это последний уровень.
+6. Условия поражения
+	Если таймер достиг нуля, но не все клетки стали зелёными — игрок проигрывает.
+(Таймер будет реализован через отдельный скрипт)
+
+GitHub Copilot: Ниже максимально короткий вариант (2–3 скрипта), который работает с Tilemap и тачем на Android: тап по коричневой клетке делает её зелёной, повторные тапы по зелёной игнорируются, победа — когда всё зелёное, поражение — когда таймер закончился.
+
+**1) Статика уровня (размеры + стартовые зелёные)**
+Создай файл LevelData.cs:
+
+```csharp
+using UnityEngine;
+
+public static class LevelData
+{
+    public static int level = 0; // меняй из MainMenu перед стартом
+
+    public static readonly Vector2Int[] sizes =
+    {
+        new Vector2Int(3,4),
+        new Vector2Int(4,5),
+        new Vector2Int(5,7),
+    };
+
+    // индексы: i = x + y * width (стартовые ЗЕЛЁНЫЕ клетки)
+    public static readonly int[][] startGreen =
+    {
+        new []{ 0, 3, 6 },                 // для 3x4
+        new []{ 1, 7, 12, 18 },            // для 4x5
+        new []{ 0, 2, 10, 17, 28, 33 },    // для 5x7
+    };
+
+    public static int MaxLevel => sizes.Length;
+}
+```
+
+**2) Логика игры (Tilemap + победа/поражение)**
+Создай файл MeadowGame.cs:
+
+```csharp
+using System.Collections;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.Tilemaps;
+
+public class MeadowGame : MonoBehaviour
+{
+    public Tilemap map;
+    public TileBase brownTile;
+    public TileBase greenTile;
+    public Camera cam;
+    public TimerSimple timer;         // можно не ставить, если таймер другой
+    public string menuScene = "MainMenu";
+    public string winScene = "Win";
+
+    int w, h, total, greenCount;
+    bool ended;
+
+    void Start()
+    {
+        if (!cam) cam = Camera.main;
+        BuildLevel();
+    }
+
+    void Update()
+    {
+        if (ended) return;
+
+        if (timer && timer.IsTimeUp)
+        {
+            ended = true;
+            SceneManager.LoadScene(menuScene);
+            return;
+        }
+
+        if (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)
+            TryPlant(Input.GetTouch(0).position);
+
+        if (Input.GetMouseButtonDown(0))
+            TryPlant(Input.mousePosition);
+    }
+
+    void BuildLevel()
+    {
+        int L = Mathf.Clamp(LevelData.level, 0, LevelData.MaxLevel - 1);
+        w = LevelData.sizes[L].x;
+        h = LevelData.sizes[L].y;
+
+        map.ClearAllTiles();
+        total = w * h;
+        greenCount = 0;
+
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                map.SetTile(new Vector3Int(x, y, 0), brownTile);
+
+        foreach (int i in LevelData.startGreen[L])
+        {
+            int x = i % w;
+            int y = i / w;
+            if (x < 0 || x >= w || y < 0 || y >= h) continue;
+            map.SetTile(new Vector3Int(x, y, 0), greenTile);
+            greenCount++;
+        }
+    }
+
+    void TryPlant(Vector2 screenPos)
+    {
+        Vector3 world = cam.ScreenToWorldPoint(new Vector3(screenPos.x, screenPos.y, 0));
+        Vector3Int cell = map.WorldToCell(world);
+
+        if (cell.x < 0 || cell.x >= w || cell.y < 0 || cell.y >= h) return;
+        if (map.GetTile(cell) == greenTile) return;
+
+        map.SetTile(cell, greenTile);
+        greenCount++;
+
+        if (greenCount >= total)
+            StartCoroutine(Win());
+    }
+
+    IEnumerator Win()
+    {
+        ended = true;
+        yield return new WaitForSeconds(1f);
+
+        LevelData.level++;
+
+        if (LevelData.level >= LevelData.MaxLevel) SceneManager.LoadScene(winScene);
+        else SceneManager.LoadScene(menuScene); // как в ТЗ: после победы на MainMenu
+    }
+}
+```
+
+**3) Простейший таймер (если нужен прямо сейчас)**
+Если у тебя “отдельный скрипт таймера” уже есть — пропусти. Если нет, создай TimerSimple.cs:
+
+```csharp
+using UnityEngine;
+
+public class TimerSimple : MonoBehaviour
+{
+    public float time = 30f;
+    public bool IsTimeUp => time <= 0f;
+
+    void Update()
+    {
+        if (time > 0f) time -= Time.deltaTime;
+    }
+}
+```
+
+## Что куда привязать в Unity (очень коротко)
+- На сцене должен быть `Grid` + `Tilemap` (у Unity 2D Tilemap).
+- Создай 2 Tile ассета: `BrownTile` и `GreenTile` (Sprite → Create → 2D → Tiles → Tile).
+- Создай пустой объект `Game` и повесь на него `MeadowGame`.
+  - `Map` → перетащи свой `Tilemap`
+  - `Brown Tile` → `BrownTile`
+  - `Green Tile` → `GreenTile`
+  - `Cam` → `Main Camera` (или оставь пустым)
+  - `Menu Scene` / `Win Scene` → имена сцен (ровно как в Build Settings)
+- (Опционально) объект `Timer` со скриптом `TimerSimple`, и его ссылку перетащи в поле `timer` у `MeadowGame`.
+- В `Build Settings` добавь сцены: `MainMenu`, `Game`, `Win` (или как назовёшь).
+
+Если хочешь, я напишу ещё супер-короткий скрипт для кнопок в MainMenu: “Старт” (ставит `LevelData.level` и грузит сцену `Game`).
